@@ -76,7 +76,7 @@ Program ini mensimulasikan sistem pengangkutan sampah di sebuah desa padat pendu
 
 ## 4. Struktur Program & Penjelasan Cell
 
-Notebook terdiri dari **13 cell aktif** yang diurutkan sebagai berikut:
+Notebook terdiri dari **12 cell aktif** yang diurutkan sebagai berikut:
 
 ---
 
