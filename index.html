@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulasi Pengangkutan Sampah Desa</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1e2530;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --teal: #39d353;
+    --accent: #1f6feb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+  .app { display: grid; grid-template-columns: 1fr 280px; grid-template-rows: auto 1fr auto; height: 100vh; gap: 0; }
+
+  header { grid-column: 1/-1; background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .title { font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
+  .title span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .controls { display: flex; align-items: center; gap: 8px; }
+  button { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.15s; }
+  button:hover { background: #2d333b; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #388bfd; }
+  .speed-wrap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  input[type=range] { width: 80px; accent-color: var(--blue); }
+  #clock { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--blue); min-width: 48px; }
+
+  .canvas-area { position: relative; background: var(--bg); overflow: hidden; }
+  #cv { display: block; width: 100%; height: 100%; }
+
+  .sidebar { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sb-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .sb-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat-card { background: var(--surface2); border-radius: 8px; padding: 8px 10px; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .stat-value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.blue { color: var(--blue); }
+  .stat-value.orange { color: var(--orange); }
+  .stat-value.purple { color: var(--purple); }
+
+  .agent-list { display: flex; flex-direction: column; gap: 5px; }
+  .agent-row { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; background: var(--surface2); }
+  .agent-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .agent-name { font-size: 12px; font-weight: 500; flex: 1; }
+  .agent-load { font-size: 11px; color: var(--muted); }
+  .load-bar-wrap { width: 50px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .load-bar { height: 100%; border-radius: 3px; transition: width 0.2s; }
+  .agent-row.inactive { opacity: 0.35; }
+
+  .tps-list { display: flex; flex-direction: column; gap: 5px; }
+  .tps-row { background: var(--surface2); border-radius: 6px; padding: 7px 10px; }
+  .tps-header { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .tps-bar-bg { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .tps-bar-fill { height: 100%; background: var(--green); border-radius: 3px; transition: width 0.3s; }
+
+  .legend { display: flex; flex-direction: column; gap: 4px; }
+  .leg-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .leg-sq { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  footer { grid-column: 1/-1; background: var(--surface); border-top: 1px solid var(--border); padding: 5px 18px; display: flex; align-items: center; gap: 16px; }
+  .footer-stat { font-size: 12px; color: var(--muted); }
+  .footer-stat b { color: var(--text); }
+  #statusmsg { font-size: 12px; color: var(--muted); margin-left: auto; font-style: italic; }
+
+  .params-grid { display: grid; grid-template-columns: 1fr; gap: 3px; }
+  .param-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; border-bottom: 1px solid #2020288a; }
+  .param-row:last-child { border-bottom: none; }
+  .param-key { color: var(--muted); }
+  .param-val { color: var(--text); font-weight: 500; }
+
+  @media (max-width: 700px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 400px auto auto; }
+    .sidebar { grid-row: 3; border-left: none; border-top: 1px solid var(--border); max-height: 320px; }
+    footer { grid-row: 4; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="title">Simulasi Pengangkutan Sampah Desa <span>DKA · Heuristik</span></div>
+    </div>
+    <div class="controls">
+      <div class="speed-wrap">
+        <span>Kecepatan</span>
+        <input type="range" id="speed" min="1" max="10" value="4">
+        <span id="speedval">4×</span>
+      </div>
+      <div id="clock">06:00</div>
+      <button id="btnReset">↺ Reset</button>
+      <button class="primary" id="btnPlay">▶ Mulai</button>
+    </div>
+  </header>
+
+  <div class="canvas-area">
+    <canvas id="cv"></canvas>
+  </div>
+
+  <div class="sidebar">
+    <div class="sb-section">
+      <div class="sb-title">Ringkasan</div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Terkumpul</div>
+          <div class="stat-value green" id="sv-collected">0.0 kg</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Rumah bersih</div>
+          <div class="stat-value blue" id="sv-clean">0 / 100</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Gerobak aktif</div>
+          <div class="stat-value orange" id="sv-ga">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Truk aktif</div>
+          <div class="stat-value purple" id="sv-ta">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Gerobak</div>
+      <div class="agent-list" id="glist"></div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Truk</div>
+      <div class="agent-list" id="tlist"></div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">TPS</div>
+      <div class="tps-list" id="tpslist"></div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Legenda</div>
+      <div class="legend">
+        <div class="leg-row"><div class="leg-dot" style="background:#4CAF50"></div>Rumah bersih (&lt;0.1 kg)</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#FF9800"></div>Rumah sedang (0.1–3 kg)</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#F44336"></div>Rumah banyak sampah (≥3 kg)</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#1E88E5"></div>Gerobak (5–7 unit)</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#8E24AA"></div>Truk (2–4 unit)</div>
+        <div class="leg-row"><div class="leg-sq" style="background:#2E7D32"></div>TPS (3 unit)</div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Parameter</div>
+      <div class="params-grid">
+        <div class="param-row"><span class="param-key">Grid</span><span class="param-val">50 × 50</span></div>
+        <div class="param-row"><span class="param-key">Gerobak cap.</span><span class="param-val">15 kg</span></div>
+        <div class="param-row"><span class="param-key">Truk cap.</span><span class="param-val">200 kg</span></div>
+        <div class="param-row"><span class="param-key">TPS cap.</span><span class="param-val">400–500 kg</span></div>
+        <div class="param-row"><span class="param-key">Gerobak ops</span><span class="param-val">06:00–15:00</span></div>
+        <div class="param-row"><span class="param-key">Truk ops</span><span class="param-val">08:00–17:00</span></div>
+        <div class="param-row"><span class="param-key">Loading gerobak</span><span class="param-val">2 mnt/kg</span></div>
+        <div class="param-row"><span class="param-key">Loading truk</span><span class="param-val">2 mnt/10 kg</span></div>
+        <div class="param-row"><span class="param-key">Travel gerobak</span><span class="param-val">3 mnt/unit</span></div>
+        <div class="param-row"><span class="param-key">Travel truk</span><span class="param-val">0.6 mnt/unit</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-stat">Total sampah: <b id="f-total">—</b></div>
+    <div class="footer-stat">Gerobak: <b id="f-ng">—</b></div>
+    <div class="footer-stat">Truk: <b id="f-nt">—</b></div>
+    <div class="footer-stat">Seed: <b id="f-seed">—</b></div>
+    <div id="statusmsg">Tekan Mulai</div>
+  </footer>
+</div>
+
+<script>
+const G_START=360,G_END=900,T_START=480,T_END=1020;
+const CAP_G=15,CAP_T=200,TPS_CAP_MIN=400,TPS_CAP_MAX=500;
+const TRASH_MIN=0,TRASH_MAX=7,GRID=50,NUM_HOUSES=100,NUM_TPS=3;
+const G_LOAD_KG=2,T_LOAD_10KG=2,G_TRAVEL=3,T_TRAVEL5=3;
+
+const GCOLORS=['#1E88E5','#0097A7','#00897B','#43A047','#039BE5','#3949AB','#00ACC1'];
+const TCOLORS=['#8E24AA','#D81B60','#E53935','#F4511E'];
+
+function seededRng(seed){
+  let s=seed>>>0;
+  return ()=>{ s=(Math.imul(s,1664525)+1013904223)>>>0; return s/4294967296; };
+}
+
+let houses=[],tpsList=[],gerobaks=[],truks=[],simTime=G_START;
+let running=false,animId=null,lastTs=null,currentSeed=0;
+
+function randInt(rng,a,b){return a+Math.floor(rng()*(b-a+1));}
+function randF(rng,a,b){return a+(b-a)*rng();}
+function dist(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
+function hhmm(m){const h=Math.floor(m/60),mn=Math.floor(m%60);return`${String(h).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;}
+
+function buildSim(seed){
+  const rng=seededRng(seed);
+  const pos=new Set();
+  const uid=()=>{let x,y;do{x=+(rng()*GRID).toFixed(1);y=+(rng()*GRID).toFixed(1);}while(pos.has(x+','+y));pos.add(x+','+y);return{x,y};};
+
+  houses=[];
+  for(let i=0;i<NUM_HOUSES;i++){
+    const {x,y}=uid();
+    const tr=+randF(rng,TRASH_MIN,TRASH_MAX).toFixed(2);
+    houses.push({id:i+1,x,y,trash0:tr,trash:tr});
+  }
+  tpsList=[];
+  for(let i=0;i<NUM_TPS;i++){
+    const {x,y}=uid();
+    const cap=+randF(rng,TPS_CAP_MIN,TPS_CAP_MAX).toFixed(1);
+    tpsList.push({id:i+1,x,y,cap,stored:0});
+  }
+
+  const NG=randInt(rng,5,7);
+  const NT=randInt(rng,2,4);
+
+  gerobaks=[];
+  for(let i=0;i<NG;i++){
+    const {x,y}=uid();
+    gerobaks.push({id:i+1,x,y,sx:x,sy:y,load:0,time:G_START,active:true,returning:false,trail:[],color:GCOLORS[i%GCOLORS.length]});
+  }
+  truks=[];
+  for(let i=0;i<NT;i++){
+    const tp=tpsList[i%NUM_TPS];
+    truks.push({id:i+1,x:tp.x,y:tp.y,load:0,time:T_START,active:true,homeTps:tp,trail:[],color:TCOLORS[i%TCOLORS.length]});
+  }
+
+  simTime=G_START;
+  document.getElementById('f-total').textContent=houses.reduce((a,h)=>a+h.trash0,0).toFixed(1)+' kg';
+  document.getElementById('f-ng').textContent=NG+' unit';
+  document.getElementById('f-nt').textContent=NT+' unit';
+  document.getElementById('f-seed').textContent=seed;
+  updateSidebar();
+}
+
+function nearestHouseWith(agent,minT=0.05){
+  let best=null,bd=Infinity;
+  for(const h of houses){if(h.trash<minT)continue;const d=dist(agent,h);if(d<bd){bd=d;best=h;}}
+  return best;
+}
+function nearestTPS(agent){
+  let best=null,bd=Infinity;
+  for(const t of tpsList){if(t.stored>=t.cap*0.99)continue;const d=dist(agent,t);if(d<bd){bd=d;best=t;}}
+  return best||tpsList[0];
+}
+
+function stepAgent(a,dt,isGerobak){
+  if(!a.active) return;
+  const endTime=isGerobak?G_END:T_END;
+  if(a.time>endTime){a.active=false;return;}
+  const speed=isGerobak?1/G_TRAVEL:5/T_TRAVEL5;
+  const cap=isGerobak?CAP_G:CAP_T;
+  const loadFn=(kg)=>isGerobak?kg*G_LOAD_KG:(kg/10)*T_LOAD_10KG;
+
+  if(a.returning||(a.load>=cap*0.88)){
+    a.returning=true;
+    const tps=isGerobak?nearestTPS(a):a.homeTps;
+    if(!tps){a.active=false;return;}
+    const d=dist(a,tps);
+    const move=speed*dt;
+    if(move>=d){
+      a.x=tps.x;a.y=tps.y;
+      const lt=loadFn(a.load);
+      tps.stored=Math.min(tps.cap,tps.stored+a.load);
+      a.load=0;a.returning=false;a.time+=lt;
+    } else {
+      const r=move/d;a.x+=(tps.x-a.x)*r;a.y+=(tps.y-a.y)*r;a.time+=dt;
+    }
+  } else {
+    const h=nearestHouseWith(a,isGerobak?0.05:0.3);
+    if(!h){
+      if(a.load>0.05){a.returning=true;}
+      else{a.active=false;}
+      return;
+    }
+    const d=dist(a,h);
+    const move=speed*dt;
+    if(move>=d){
+      a.x=h.x;a.y=h.y;
+      const take=Math.min(h.trash,cap-a.load);
+      if(take>0.01){
+        h.trash=Math.max(0,h.trash-take);
+        a.load+=take;
+        a.time+=loadFn(take);
+      }
+    } else {
+      const r=move/d;a.x+=(h.x-a.x)*r;a.y+=(h.y-a.y)*r;a.time+=dt;
+    }
+  }
+  a.trail.push({x:a.x,y:a.y});
+  if(a.trail.length>40) a.trail.shift();
+}
+
+function simStep(dt){
+  const allAgents=[...gerobaks,...truks];
+  const active=allAgents.filter(a=>a.active);
+  if(!active.length){stop();document.getElementById('statusmsg').textContent='✅ Simulasi selesai!';return;}
+  const minT=Math.min(...active.map(a=>a.time));
+  simTime=minT;
+  for(const g of gerobaks) if(g.active&&g.time<=simTime+0.1) stepAgent(g,dt,true);
+  for(const t of truks) if(t.active&&t.time<=simTime+0.1) stepAgent(t,dt,false);
+}
+
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+
+function resize(){
+  const area=cv.parentElement;
+  cv.width=area.clientWidth;cv.height=area.clientHeight;
+}
+window.addEventListener('resize',resize);
+
+function toC(gx,gy){
+  const W=cv.width,H=cv.height,P=32;
+  return{cx:P+(gx/GRID)*(W-2*P),cy:H-P-(gy/GRID)*(H-2*P)};
+}
+
+function hexToRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;}
+
+function draw(){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
+
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=0.5;
+  for(let i=0;i<=10;i++){
+    const{cx}=toC(i*5,0),{cy}=toC(0,i*5);
+    ctx.beginPath();ctx.moveTo(cx,32);ctx.lineTo(cx,H-32);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(32,cy);ctx.lineTo(W-32,cy);ctx.stroke();
+  }
+
+  // Trails
+  ctx.setLineDash([3,4]);
+  for(const g of gerobaks){
+    if(g.trail.length<2)continue;
+    ctx.strokeStyle=hexToRgba(g.color,0.25);ctx.lineWidth=1;
+    ctx.beginPath();
+    const p0=toC(g.trail[0].x,g.trail[0].y);ctx.moveTo(p0.cx,p0.cy);
+    for(let i=1;i<g.trail.length;i++){const p=toC(g.trail[i].x,g.trail[i].y);ctx.lineTo(p.cx,p.cy);}
+    ctx.stroke();
+  }
+  for(const t of truks){
+    if(t.trail.length<2)continue;
+    ctx.strokeStyle=hexToRgba(t.color,0.2);ctx.lineWidth=1.5;
+    ctx.beginPath();
+    const p0=toC(t.trail[0].x,t.trail[0].y);ctx.moveTo(p0.cx,p0.cy);
+    for(let i=1;i<t.trail.length;i++){const p=toC(t.trail[i].x,t.trail[i].y);ctx.lineTo(p.cx,p.cy);}
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Houses
+  for(const h of houses){
+    const{cx,cy}=toC(h.x,h.y);
+    const ratio=h.trash/(h.trash0||1);
+    let col=ratio<0.05?'#4CAF50':ratio<0.43?'#FF9800':'#F44336';
+    const s=4;
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy-s-1);ctx.lineTo(cx+s,cy);
+    ctx.lineTo(cx+s,cy+s);ctx.lineTo(cx-s,cy+s);ctx.lineTo(cx-s,cy);
+    ctx.closePath();ctx.fill();
+  }
+
+  // TPS
+  for(const t of tpsList){
+    const{cx,cy}=toC(t.x,t.y);
+    ctx.fillStyle='#1B5E20';ctx.strokeStyle='#4CAF50';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(cx-10,cy-10,20,20,3);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#A5D6A7';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('TPS',cx,cy);
+    // fill bar
+    const fillW=Math.min(16,16*(t.stored/t.cap));
+    ctx.fillStyle='#1E4620';ctx.fillRect(cx-8,cy+11,16,3);
+    ctx.fillStyle='#66BB6A';ctx.fillRect(cx-8,cy+11,fillW,3);
+  }
+
+  // Gerobaks
+  for(const g of gerobaks){
+    const{cx,cy}=toC(g.x,g.y);
+    ctx.globalAlpha=g.active?1:0.3;
+    // body circle
+    ctx.fillStyle=g.color;ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);ctx.fill();
+    // load indicator arc
+    if(g.load>0.05){
+      ctx.strokeStyle='#FFD54F';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(cx,cy,11,-(Math.PI/2),(-(Math.PI/2))+(Math.PI*2*(g.load/CAP_G)));ctx.stroke();
+    }
+    // wheels
+    ctx.fillStyle='#263238';
+    ctx.beginPath();ctx.arc(cx-4,cy+7,2.5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+4,cy+7,2.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('G'+g.id,cx,cy-1);
+    ctx.globalAlpha=1;
+  }
+
+  // Truks
+  for(const t of truks){
+    const{cx,cy}=toC(t.x,t.y);
+    ctx.globalAlpha=t.active?1:0.3;
+    ctx.fillStyle=t.color;
+    ctx.beginPath();ctx.roundRect(cx-13,cy-8,26,16,4);ctx.fill();
+    if(t.load>0.05){
+      ctx.fillStyle='#FFD54F';
+      const lw=Math.min(20,20*(t.load/CAP_T));
+      ctx.fillRect(cx-10,cy-13,lw,4);
+    }
+    // cab
+    ctx.fillStyle='rgba(255,255,255,0.2)';ctx.beginPath();ctx.roundRect(cx-10,cy-6,10,9,2);ctx.fill();
+    // wheels
+    ctx.fillStyle='#1a1a1a';
+    ctx.beginPath();ctx.arc(cx-7,cy+9,3.5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+5,cy+9,3.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.85)';
+    ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('T'+t.id,cx+3,cy);
+    ctx.globalAlpha=1;
+  }
+}
+
+function updateSidebar(){
+  const collected=tpsList.reduce((a,t)=>a+t.stored,0);
+  const clean=houses.filter(h=>h.trash<0.05).length;
+  document.getElementById('sv-collected').textContent=collected.toFixed(1)+' kg';
+  document.getElementById('sv-clean').textContent=clean+' / 100';
+  document.getElementById('sv-ga').textContent=gerobaks.filter(g=>g.active).length+' / '+gerobaks.length;
+  document.getElementById('sv-ta').textContent=truks.filter(t=>t.active).length+' / '+truks.length;
+  document.getElementById('clock').textContent=hhmm(simTime);
+
+  const gl=document.getElementById('glist');
+  gl.innerHTML=gerobaks.map(g=>`
+    <div class="agent-row ${g.active?'':'inactive'}">
+      <div class="agent-dot" style="background:${g.color}"></div>
+      <span class="agent-name">G-${g.id}</span>
+      <span class="agent-load">${g.load.toFixed(1)}kg</span>
+      <div class="load-bar-wrap"><div class="load-bar" style="width:${(g.load/CAP_G*100).toFixed(0)}%;background:${g.color}"></div></div>
+    </div>`).join('');
+
+  const tl=document.getElementById('tlist');
+  tl.innerHTML=truks.map(t=>`
+    <div class="agent-row ${t.active?'':'inactive'}">
+      <div class="agent-dot" style="background:${t.color}"></div>
+      <span class="agent-name">T-${t.id}</span>
+      <span class="agent-load">${t.load.toFixed(1)}kg</span>
+      <div class="load-bar-wrap"><div class="load-bar" style="width:${(t.load/CAP_T*100).toFixed(0)}%;background:${t.color}"></div></div>
+    </div>`).join('');
+
+  const tpsl=document.getElementById('tpslist');
+  tpsl.innerHTML=tpsList.map(t=>`
+    <div class="tps-row">
+      <div class="tps-header">
+        <span style="color:#A5D6A7;font-weight:600">TPS-${t.id}</span>
+        <span style="color:#8b949e">${t.stored.toFixed(0)} / ${t.cap.toFixed(0)} kg</span>
+      </div>
+      <div class="tps-bar-bg"><div class="tps-bar-fill" style="width:${Math.min(100,t.stored/t.cap*100).toFixed(1)}%"></div></div>
+    </div>`).join('');
+}
+
+function stop(){running=false;if(animId)cancelAnimationFrame(animId);animId=null;lastTs=null;document.getElementById('btnPlay').textContent='▶ Lanjut';}
+
+function loop(ts){
+  if(!running)return;
+  if(!lastTs)lastTs=ts;
+  const elapsed=(ts-lastTs)/1000;lastTs=ts;
+  const spd=+document.getElementById('speed').value;
+  const simDt=elapsed*spd*25;
+  const steps=4;
+  for(let i=0;i<steps;i++) simStep(simDt/steps);
+  draw();updateSidebar();
+  animId=requestAnimationFrame(loop);
+}
+
+function doReset(){
+  stop();
+  currentSeed=Math.floor(Math.random()*99999)+1;
+  buildSim(currentSeed);
+  resize();draw();
+  document.getElementById('btnPlay').textContent='▶ Mulai';
+  document.getElementById('statusmsg').textContent='Seed baru: '+currentSeed+' — Tekan Mulai';
+}
+
+document.getElementById('btnPlay').addEventListener('click',()=>{
+  if(running){stop();document.getElementById('statusmsg').textContent='⏸ Dijeda';}
+  else{
+    running=true;lastTs=null;
+    document.getElementById('btnPlay').textContent='⏸ Jeda';
+    document.getElementById('statusmsg').textContent='Simulasi berjalan…';
+    animId=requestAnimationFrame(loop);
+  }
+});
+document.getElementById('btnReset').addEventListener('click',doReset);
+document.getElementById('speed').addEventListener('input',function(){document.getElementById('speedval').textContent=this.value+'×';});
+
+resize();doReset();
+</script>
+</body>
+</html>
