@@ -235,12 +235,14 @@ function buildSim(seed){
   gerobaks=[];
   for(let i=0;i<NG;i++){
     const {x,y}=uid();
-    gerobaks.push({id:i+1,x,y,sx:x,sy:y,load:0,time:G_START,active:true,returning:false,trail:[],color:GCOLORS[i%GCOLORS.length]});
+    gerobaks.push({id:i+1,x,y,sx:x,sy:y,load:0,time:G_START,active:true,
+      returning:false, transferFlash:0, trail:[],color:GCOLORS[i%GCOLORS.length]});
   }
   truks=[];
   for(let i=0;i<NT;i++){
     const tp=tpsList[i%NUM_TPS];
-    truks.push({id:i+1,x:tp.x,y:tp.y,load:0,time:T_START,active:true,homeTps:tp,trail:[],color:TCOLORS[i%TCOLORS.length]});
+    truks.push({id:i+1,x:tp.x,y:tp.y,load:0,time:T_START,active:true,homeTps:tp,
+      returning:false, trail:[],color:TCOLORS[i%TCOLORS.length]});
   }
 
   simTime=G_START;
@@ -251,191 +253,206 @@ function buildSim(seed){
   updateSidebar();
 }
 
-function nearestHouseWith(agent,minT=0.05){
-  let best=null,bd=Infinity;
-  for(const h of houses){if(h.trash<minT)continue;const d=dist(agent,h);if(d<bd){bd=d;best=h;}}
-  return best;
-}
 function nearestTPS(agent){
   let best=null,bd=Infinity;
   for(const t of tpsList){if(t.stored>=t.cap*0.99)continue;const d=dist(agent,t);if(d<bd){bd=d;best=t;}}
   return best||tpsList[0];
 }
 
-function stepAgent(a,dt,isGerobak){
-  if(!a.active) return;
-  const endTime=isGerobak?G_END:T_END;
-  if(a.time>endTime){a.active=false;return;}
-  const speed=isGerobak?1/G_TRAVEL:5/T_TRAVEL5;
-  const cap=isGerobak?CAP_G:CAP_T;
-  const loadFn=(kg)=>isGerobak?kg*G_LOAD_KG:(kg/10)*T_LOAD_10KG;
-
-  if(a.returning||(a.load>=cap*0.88)){
-    a.returning=true;
-    const tps=isGerobak?nearestTPS(a):a.homeTps;
-    if(!tps){a.active=false;return;}
-    const d=dist(a,tps);
-    const move=speed*dt;
-    if(move>=d){
-      a.x=tps.x;a.y=tps.y;
-      const lt=loadFn(a.load);
-      tps.stored=Math.min(tps.cap,tps.stored+a.load);
-      a.load=0;a.returning=false;a.time+=lt;
-    } else {
-      const r=move/d;a.x+=(tps.x-a.x)*r;a.y+=(tps.y-a.y)*r;a.time+=dt;
-    }
-  } else {
-    const h=nearestHouseWith(a,isGerobak?0.05:0.3);
-    if(!h){
-      if(a.load>0.05){a.returning=true;}
-      else{a.active=false;}
-      return;
-    }
-    const d=dist(a,h);
-    const move=speed*dt;
-    if(move>=d){
-      a.x=h.x;a.y=h.y;
-      const take=Math.min(h.trash,cap-a.load);
-      if(take>0.01){
-        h.trash=Math.max(0,h.trash-take);
-        a.load+=take;
-        a.time+=loadFn(take);
-      }
-    } else {
-      const r=move/d;a.x+=(h.x-a.x)*r;a.y+=(h.y-a.y)*r;a.time+=dt;
-    }
-  }
-  a.trail.push({x:a.x,y:a.y});
-  if(a.trail.length>40) a.trail.shift();
+function nearestHouseWith(agent,minT=0.05){
+  let best=null,bd=Infinity;
+  for(const h of houses){if(h.trash<minT)continue;const d=dist(agent,h);if(d<bd){bd=d;best=h;}}
+  return best;
 }
+
+function gLoadTime(kg){ return kg*G_LOAD_KG; }
+function tLoadTime(kg){ return (kg/10)*T_LOAD_10KG; }
 
 function simStep(dt){
-  const allAgents=[...gerobaks,...truks];
-  const active=allAgents.filter(a=>a.active);
-  if(!active.length){stop();document.getElementById('statusmsg').textContent='✅ Simulasi selesai!';return;}
-  const minT=Math.min(...active.map(a=>a.time));
-  simTime=minT;
-  for(const g of gerobaks) if(g.active&&g.time<=simTime+0.1) stepAgent(g,dt,true);
-  for(const t of truks) if(t.active&&t.time<=simTime+0.1) stepAgent(t,dt,false);
+  const activeG = gerobaks.filter(g=>g.active);
+  const activeT = truks.filter(t=>t.active);
+  const allActive = [...activeG,...activeT];
+  if(!allActive.length){stop();document.getElementById('statusmsg').textContent='✅ Simulasi selesai!';return;}
+  simTime = Math.min(...allActive.map(a=>a.time));
+  for(const g of activeG) if(g.time <= simTime+0.5) stepGerobak(g, dt);
+  for(const t of activeT) if(t.time <= simTime+0.5) stepTruk(t, dt);
 }
+
+function stepGerobak(g, dt){
+  if(!g.active) return;
+  if(g.time >= G_END){ g.active=false; return; }
+  const speed = 1/G_TRAVEL;
+
+  if(g.returning){
+    const tps = nearestTPS(g);
+    if(!tps){ g.active=false; return; }
+    const d = dist(g,tps);
+    const move = speed*dt;
+    if(move >= d){
+      g.x=tps.x; g.y=tps.y;
+      const lt = gLoadTime(g.load);
+      tps.stored = Math.min(tps.cap, tps.stored+g.load);
+      g.load=0; g.returning=false; g.time+=lt;
+    } else {
+      const r=move/d; g.x+=(tps.x-g.x)*r; g.y+=(tps.y-g.y)*r; g.time+=dt;
+    }
+    _pushTrail(g); return;
+  }
+
+  if(g.load >= CAP_G*0.9){
+    let bestTruk=null, bestDist=Infinity;
+    for(const t of truks){
+      if(!t.active || t.time < T_START) continue;
+      const d = dist(g,t);
+      if(d < bestDist && (CAP_T - t.load) >= 5.0 && d < 12){ bestDist=d; bestTruk=t; }
+    }
+    if(bestTruk){
+      const tpsNearest = nearestTPS(g);
+      const distTps = tpsNearest ? dist(g,tpsNearest) : Infinity;
+      if(bestDist < distTps*0.75){
+        const d = dist(g,bestTruk);
+        const move = speed*dt;
+        if(move >= d){
+          g.x=bestTruk.x; g.y=bestTruk.y;
+          const transferKg = Math.min(g.load, CAP_T-bestTruk.load);
+          g.load = Math.max(0, g.load-transferKg);
+          bestTruk.load = Math.min(CAP_T, bestTruk.load+transferKg);
+          g.time += gLoadTime(transferKg); bestTruk.time += tLoadTime(transferKg);
+          g.transferFlash = 8;
+        } else {
+          const r=move/d; g.x+=(bestTruk.x-g.x)*r; g.y+=(bestTruk.y-g.y)*r; g.time+=dt;
+        }
+        _pushTrail(g); return;
+      }
+    }
+    g.returning=true; return;
+  }
+
+  const h = nearestHouseWith(g, 0.05);
+  if(!h){ if(g.load > 0.05) g.returning=true; else g.active=false; return; }
+
+  const d = dist(g,h);
+  const move = speed*dt;
+  if(move >= d){
+    g.x=h.x; g.y=h.y;
+    const take = Math.min(h.trash, CAP_G-g.load);
+    if(take > 0.01){
+      h.trash = Math.max(0, h.trash-take);
+      g.load += take; g.time += gLoadTime(take);
+    }
+    if(g.load >= 3.0){
+      for(const t of truks){
+        if(!t.active || t.time < T_START) continue;
+        const td = dist(g,t);
+        if(td < 5.0 && (CAP_T - t.load) >= 3.0){
+          const tpsNearest = nearestTPS(g);
+          const distTps = tpsNearest ? dist(g,tpsNearest) : Infinity;
+          if(td < distTps*0.75){
+            const transferKg = Math.min(g.load, CAP_T-t.load);
+            g.load = Math.max(0, g.load-transferKg);
+            t.load = Math.min(CAP_T, t.load+transferKg);
+            g.time += gLoadTime(transferKg); t.time += tLoadTime(transferKg);
+            g.transferFlash = 8; break;
+          }
+        }
+      }
+    }
+  } else {
+    const r=move/d; g.x+=(h.x-g.x)*r; g.y+=(h.y-g.y)*r; g.time+=dt;
+  }
+  _pushTrail(g); if(g.transferFlash > 0) g.transferFlash--;
+}
+
+function stepTruk(t, dt){
+  if(!t.active) return;
+  if(t.time < T_START){ t.time = T_START; return; }
+  if(t.time >= T_END){ t.active=false; return; }
+  const speed = 5/T_TRAVEL5;
+
+  if(t.returning || t.load >= CAP_T*0.9){
+    t.returning=true;
+    const tps = nearestTPS(t);
+    if(!tps){ t.active=false; return; }
+    const d = dist(t,tps);
+    const move = speed*dt;
+    if(move >= d){
+      t.x=tps.x; t.y=tps.y;
+      tps.stored = Math.min(tps.cap, tps.stored+t.load);
+      t.time += tLoadTime(t.load); t.load=0; t.returning=false;
+    } else {
+      const r=move/d; t.x+=(tps.x-t.x)*r; t.y+=(tps.y-t.y)*r; t.time+=dt;
+    }
+    _pushTrail(t); return;
+  }
+
+  const h = nearestHouseWith(t, 0.3);
+  if(!h){ if(t.load > 0.05) t.returning=true; else t.active=false; return; }
+
+  const d = dist(t,h);
+  const move = speed*dt;
+  if(move >= d){
+    t.x=h.x; t.y=h.y;
+    const take = Math.min(h.trash, CAP_T-t.load);
+    if(take > 0.01){
+      h.trash = Math.max(0, h.trash-take);
+      t.load += take; t.time += tLoadTime(take);
+    }
+  } else {
+    const r=move/d; t.x+=(h.x-t.x)*r; t.y+=(h.y-t.y)*r; t.time+=dt;
+  }
+  _pushTrail(t);
+}
+
+function _pushTrail(a){ a.trail.push({x:a.x,y:a.y}); if(a.trail.length>40) a.trail.shift(); }
 
 const cv=document.getElementById('cv');
 const ctx=cv.getContext('2d');
-
-function resize(){
-  const area=cv.parentElement;
-  cv.width=area.clientWidth;cv.height=area.clientHeight;
-}
+function resize(){ const area=cv.parentElement; cv.width=area.clientWidth;cv.height=area.clientHeight; }
 window.addEventListener('resize',resize);
-
-function toC(gx,gy){
-  const W=cv.width,H=cv.height,P=32;
-  return{cx:P+(gx/GRID)*(W-2*P),cy:H-P-(gy/GRID)*(H-2*P)};
-}
-
+function toC(gx,gy){ const W=cv.width,H=cv.height,P=32; return{cx:P+(gx/GRID)*(W-2*P),cy:H-P-(gy/GRID)*(H-2*P)}; }
 function hexToRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;}
 
 function draw(){
   const W=cv.width,H=cv.height;
-  ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
-
-  // Grid
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
   ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=0.5;
   for(let i=0;i<=10;i++){
     const{cx}=toC(i*5,0),{cy}=toC(0,i*5);
     ctx.beginPath();ctx.moveTo(cx,32);ctx.lineTo(cx,H-32);ctx.stroke();
     ctx.beginPath();ctx.moveTo(32,cy);ctx.lineTo(W-32,cy);ctx.stroke();
   }
-
-  // Trails
   ctx.setLineDash([3,4]);
-  for(const g of gerobaks){
-    if(g.trail.length<2)continue;
-    ctx.strokeStyle=hexToRgba(g.color,0.25);ctx.lineWidth=1;
-    ctx.beginPath();
-    const p0=toC(g.trail[0].x,g.trail[0].y);ctx.moveTo(p0.cx,p0.cy);
-    for(let i=1;i<g.trail.length;i++){const p=toC(g.trail[i].x,g.trail[i].y);ctx.lineTo(p.cx,p.cy);}
-    ctx.stroke();
-  }
-  for(const t of truks){
-    if(t.trail.length<2)continue;
-    ctx.strokeStyle=hexToRgba(t.color,0.2);ctx.lineWidth=1.5;
-    ctx.beginPath();
-    const p0=toC(t.trail[0].x,t.trail[0].y);ctx.moveTo(p0.cx,p0.cy);
-    for(let i=1;i<t.trail.length;i++){const p=toC(t.trail[i].x,t.trail[i].y);ctx.lineTo(p.cx,p.cy);}
-    ctx.stroke();
-  }
+  for(const g of gerobaks){ if(g.trail.length<2)continue; ctx.strokeStyle=hexToRgba(g.color,0.25);ctx.lineWidth=1; ctx.beginPath(); const p0=toC(g.trail[0].x,g.trail[0].y);ctx.moveTo(p0.cx,p0.cy); for(let i=1;i<g.trail.length;i++){const p=toC(g.trail[i].x,g.trail[i].y);ctx.lineTo(p.cx,p.cy);} ctx.stroke(); }
+  for(const t of truks){ if(t.trail.length<2)continue; ctx.strokeStyle=hexToRgba(t.color,0.2);ctx.lineWidth=1.5; ctx.beginPath(); const p0=toC(t.trail[0].x,t.trail[0].y);ctx.moveTo(p0.cx,p0.cy); for(let i=1;i<t.trail.length;i++){const p=toC(t.trail[i].x,t.trail[i].y);ctx.lineTo(p.cx,p.cy);} ctx.stroke(); }
   ctx.setLineDash([]);
-
-  // Houses
   for(const h of houses){
     const{cx,cy}=toC(h.x,h.y);
     const ratio=h.trash/(h.trash0||1);
-    let col=ratio<0.05?'#4CAF50':ratio<0.43?'#FF9800':'#F44336';
-    const s=4;
-    ctx.fillStyle=col;
-    ctx.beginPath();
-    ctx.moveTo(cx,cy-s-1);ctx.lineTo(cx+s,cy);
-    ctx.lineTo(cx+s,cy+s);ctx.lineTo(cx-s,cy+s);ctx.lineTo(cx-s,cy);
-    ctx.closePath();ctx.fill();
+    ctx.fillStyle=ratio<0.05?'#4CAF50':ratio<0.43?'#FF9800':'#F44336';
+    const s=4; ctx.beginPath();ctx.moveTo(cx,cy-s-1);ctx.lineTo(cx+s,cy);ctx.lineTo(cx+s,cy+s);ctx.lineTo(cx-s,cy+s);ctx.lineTo(cx-s,cy);ctx.closePath();ctx.fill();
   }
-
-  // TPS
   for(const t of tpsList){
     const{cx,cy}=toC(t.x,t.y);
-    ctx.fillStyle='#1B5E20';ctx.strokeStyle='#4CAF50';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.roundRect(cx-10,cy-10,20,20,3);ctx.fill();ctx.stroke();
-    ctx.fillStyle='#A5D6A7';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('TPS',cx,cy);
-    // fill bar
-    const fillW=Math.min(16,16*(t.stored/t.cap));
-    ctx.fillStyle='#1E4620';ctx.fillRect(cx-8,cy+11,16,3);
-    ctx.fillStyle='#66BB6A';ctx.fillRect(cx-8,cy+11,fillW,3);
+    ctx.fillStyle='#1B5E20';ctx.strokeStyle='#4CAF50';ctx.lineWidth=1.5; ctx.beginPath();ctx.roundRect(cx-10,cy-10,20,20,3);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#A5D6A7';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle'; ctx.fillText('TPS',cx,cy);
+    const fillW=Math.min(16,16*(t.stored/t.cap)); ctx.fillStyle='#1E4620';ctx.fillRect(cx-8,cy+11,16,3); ctx.fillStyle='#66BB6A';ctx.fillRect(cx-8,cy+11,fillW,3);
   }
-
-  // Gerobaks
   for(const g of gerobaks){
-    const{cx,cy}=toC(g.x,g.y);
-    ctx.globalAlpha=g.active?1:0.3;
-    // body circle
+    const{cx,cy}=toC(g.x,g.y); ctx.globalAlpha=g.active?1:0.3;
+    if(g.transferFlash>0){ ctx.strokeStyle='#FFD54F';ctx.lineWidth=2; ctx.beginPath();ctx.arc(cx,cy,16,0,Math.PI*2);ctx.stroke(); }
     ctx.fillStyle=g.color;ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);ctx.fill();
-    // load indicator arc
-    if(g.load>0.05){
-      ctx.strokeStyle='#FFD54F';ctx.lineWidth=2.5;
-      ctx.beginPath();ctx.arc(cx,cy,11,-(Math.PI/2),(-(Math.PI/2))+(Math.PI*2*(g.load/CAP_G)));ctx.stroke();
-    }
-    // wheels
-    ctx.fillStyle='#263238';
-    ctx.beginPath();ctx.arc(cx-4,cy+7,2.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx+4,cy+7,2.5,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.7)';
-    ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('G'+g.id,cx,cy-1);
-    ctx.globalAlpha=1;
+    if(g.load>0.05){ ctx.strokeStyle='#FFD54F';ctx.lineWidth=2.5; ctx.beginPath();ctx.arc(cx,cy,11,-(Math.PI/2),(-(Math.PI/2))+(Math.PI*2*(g.load/CAP_G)));ctx.stroke(); }
+    ctx.fillStyle='#263238'; ctx.beginPath();ctx.arc(cx-4,cy+7,2.5,0,Math.PI*2);ctx.fill(); ctx.beginPath();ctx.arc(cx+4,cy+7,2.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle'; ctx.fillText('G'+g.id,cx,cy-1); ctx.globalAlpha=1;
   }
-
-  // Truks
   for(const t of truks){
-    const{cx,cy}=toC(t.x,t.y);
-    ctx.globalAlpha=t.active?1:0.3;
-    ctx.fillStyle=t.color;
-    ctx.beginPath();ctx.roundRect(cx-13,cy-8,26,16,4);ctx.fill();
-    if(t.load>0.05){
-      ctx.fillStyle='#FFD54F';
-      const lw=Math.min(20,20*(t.load/CAP_T));
-      ctx.fillRect(cx-10,cy-13,lw,4);
-    }
-    // cab
+    if(simTime < T_START && !t.active) continue;
+    const{cx,cy}=toC(t.x,t.y); ctx.globalAlpha=simTime < T_START ? 0.25 : (t.active ? 1 : 0.3);
+    ctx.fillStyle=t.color; ctx.beginPath();ctx.roundRect(cx-13,cy-8,26,16,4);ctx.fill();
+    if(t.load>0.05){ ctx.fillStyle='#FFD54F'; const lw=Math.min(20,20*(t.load/CAP_T)); ctx.fillRect(cx-10,cy-13,lw,4); }
     ctx.fillStyle='rgba(255,255,255,0.2)';ctx.beginPath();ctx.roundRect(cx-10,cy-6,10,9,2);ctx.fill();
-    // wheels
-    ctx.fillStyle='#1a1a1a';
-    ctx.beginPath();ctx.arc(cx-7,cy+9,3.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx+5,cy+9,3.5,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.85)';
-    ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('T'+t.id,cx+3,cy);
-    ctx.globalAlpha=1;
+    ctx.fillStyle='#1a1a1a'; ctx.beginPath();ctx.arc(cx-7,cy+9,3.5,0,Math.PI*2);ctx.fill(); ctx.beginPath();ctx.arc(cx+5,cy+9,3.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='bold 7px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle'; ctx.fillText('T'+t.id,cx+3,cy); ctx.globalAlpha=1;
   }
 }
 
@@ -445,40 +462,14 @@ function updateSidebar(){
   document.getElementById('sv-collected').textContent=collected.toFixed(1)+' kg';
   document.getElementById('sv-clean').textContent=clean+' / 100';
   document.getElementById('sv-ga').textContent=gerobaks.filter(g=>g.active).length+' / '+gerobaks.length;
-  document.getElementById('sv-ta').textContent=truks.filter(t=>t.active).length+' / '+truks.length;
+  document.getElementById('sv-ta').textContent=simTime < T_START ? `menunggu / ${truks.length}` : truks.filter(t=>t.active).length+' / '+truks.length;
   document.getElementById('clock').textContent=hhmm(simTime);
-
-  const gl=document.getElementById('glist');
-  gl.innerHTML=gerobaks.map(g=>`
-    <div class="agent-row ${g.active?'':'inactive'}">
-      <div class="agent-dot" style="background:${g.color}"></div>
-      <span class="agent-name">G-${g.id}</span>
-      <span class="agent-load">${g.load.toFixed(1)}kg</span>
-      <div class="load-bar-wrap"><div class="load-bar" style="width:${(g.load/CAP_G*100).toFixed(0)}%;background:${g.color}"></div></div>
-    </div>`).join('');
-
-  const tl=document.getElementById('tlist');
-  tl.innerHTML=truks.map(t=>`
-    <div class="agent-row ${t.active?'':'inactive'}">
-      <div class="agent-dot" style="background:${t.color}"></div>
-      <span class="agent-name">T-${t.id}</span>
-      <span class="agent-load">${t.load.toFixed(1)}kg</span>
-      <div class="load-bar-wrap"><div class="load-bar" style="width:${(t.load/CAP_T*100).toFixed(0)}%;background:${t.color}"></div></div>
-    </div>`).join('');
-
-  const tpsl=document.getElementById('tpslist');
-  tpsl.innerHTML=tpsList.map(t=>`
-    <div class="tps-row">
-      <div class="tps-header">
-        <span style="color:#A5D6A7;font-weight:600">TPS-${t.id}</span>
-        <span style="color:#8b949e">${t.stored.toFixed(0)} / ${t.cap.toFixed(0)} kg</span>
-      </div>
-      <div class="tps-bar-bg"><div class="tps-bar-fill" style="width:${Math.min(100,t.stored/t.cap*100).toFixed(1)}%"></div></div>
-    </div>`).join('');
+  document.getElementById('glist').innerHTML=gerobaks.map(g=>`<div class="agent-row ${g.active?'':'inactive'}"><div class="agent-dot" style="background:${g.color}"></div><span class="agent-name">G-${g.id}</span><span class="agent-load">${g.load.toFixed(1)}kg</span><div class="load-bar-wrap"><div class="load-bar" style="width:${(g.load/CAP_G*100).toFixed(0)}%;background:${g.color}"></div></div></div>`).join('');
+  document.getElementById('tlist').innerHTML=truks.map(t=>`<div class="agent-row ${t.active?'':'inactive'}"><div class="agent-dot" style="background:${t.color}"></div><span class="agent-name">T-${t.id}</span><span class="agent-load">${simTime < T_START ? '⏳ 08:00' : t.load.toFixed(1)+'kg'}</span><div class="load-bar-wrap"><div class="load-bar" style="width:${(t.load/CAP_T*100).toFixed(0)}%;background:${t.color}"></div></div></div>`).join('');
+  document.getElementById('tpslist').innerHTML=tpsList.map(t=>`<div class="tps-row"><div class="tps-header"><span style="color:#A5D6A7;font-weight:600">TPS-${t.id}</span><span style="color:#8b949e">${t.stored.toFixed(0)} / ${t.cap.toFixed(0)} kg</span></div><div class="tps-bar-bg"><div class="tps-bar-fill" style="width:${Math.min(100,t.stored/t.cap*100).toFixed(1)}%"></div></div></div>`).join('');
 }
 
 function stop(){running=false;if(animId)cancelAnimationFrame(animId);animId=null;lastTs=null;document.getElementById('btnPlay').textContent='▶ Lanjut';}
-
 function loop(ts){
   if(!running)return;
   if(!lastTs)lastTs=ts;
@@ -511,7 +502,6 @@ document.getElementById('btnPlay').addEventListener('click',()=>{
 });
 document.getElementById('btnReset').addEventListener('click',doReset);
 document.getElementById('speed').addEventListener('input',function(){document.getElementById('speedval').textContent=this.value+'×';});
-
 resize();doReset();
 </script>
 </body>
