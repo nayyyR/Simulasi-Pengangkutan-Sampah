@@ -20,12 +20,14 @@
 
 ## 1. Deskripsi Proyek
 
-Program ini mensimulasikan sistem pengangkutan sampah di sebuah desa padat penduduk menggunakan **algoritma heuristik**. Simulasi melibatkan tiga jenis entitas utama, yaitu rumah penduduk, gerobak sampah, dan truk sampah yang berinteraksi secara real-time dalam satu peta acak berukuran 50×50 satuan jarak.
+Program ini mensimulasikan sistem pengangkutan sampah di sebuah desa padat penduduk menggunakan **algoritma heuristik**. Simulasi melibatkan tiga jenis entitas utama, yaitu rumah penduduk, gerobak sampah, dan truk sampah yang berinteraksi secara *real-time* dalam satu peta acak berukuran 50×50 satuan jarak.
+
+Semua agen (gerobak dan truk) berjalan **secara paralel** dalam satu *loop* simulasi berbasis *event-driven*: setiap iterasi memilih agen dengan jam (`time`) terkecil untuk melakukan langkah berikutnya, sehingga gerobak yang mulai jam 06:00 dan truk yang mulai jam 08:00 benar-benar beroperasi bersamaan di peta yang sama.
 
 **Tujuan utama:**
 - Menentukan rute terbaik bagi gerobak dan truk sampah dalam mengangkut sampah ke Tempat Pembuangan Sampah Akhir (TPS)
 - Mengoptimalkan penggunaan waktu operasi yang terbatas
-- Memberikan mekanisme *sharing* sampah antara agen
+- Memberikan mekanisme *sharing* sampah antara agen, termasuk transfer muatan gerobak → truk saat berpapasan
 
 ---
 
@@ -204,6 +206,7 @@ Struktur serupa dengan `Gerobak`, perbedaan utama:
 - `time` mulai dari `TRUK_START` (08:00 = 480 menit)
 - Menggunakan `truk_travel_time()` (lebih cepat) dan `truk_load_time()` (lebih cepat per kg)
 - Memiliki metode `receive_from_gerobak()` untuk menerima transfer
+- Memiliki atribut `received_from_gerobak_kg` untuk mencatat total sampah yang diterima dari gerobak
 
 ---
 
@@ -269,18 +272,27 @@ Berisi empat fungsi heuristik inti. Penjelasan selengkapnya ada di [Bagian 5](#5
 
 ---
 
-### Cell 9 — Simulasi Utama 
+### Cell 9 — Simulasi Utama (Concurrent Event-Driven)
 
-Cell dimulai dengan **cek konsistensi koordinat** dan **reset state** seluruh agen, lalu menjalankan dua loop simulasi.
+Cell dimulai dengan **cek konsistensi koordinat** dan **reset state** seluruh agen, lalu menjalankan **satu loop gabungan** (*concurrent*) untuk semua agen.
 
 **Reset state sebelum simulasi:**
 - `house.trash_remaining = house.trash_initial` untuk semua rumah
 - `tps.stored = 0` untuk semua TPS
+- `all_logs = []` dikosongkan untuk mencegah penumpukan log dari run sebelumnya
 - Semua agen dikembalikan ke posisi awal (dari `_snapshot`) dengan `time`, `load`, `total_dist` di-nol-kan
 
-**Loop Gerobak** — event-driven, pilih gerobak dengan `time` terkecil tiap iterasi.
+**Loop Concurrent (satu while loop untuk semua agen):**
 
-**Loop Truk** — batch greedy, pilih truk dengan `time` terkecil, rencanakan dan eksekusi batch hingga 6 rumah.
+Setiap iterasi memilih **satu agen aktif dengan `time` terkecil** dari gabungan semua gerobak dan truk yang belum selesai. Ini mensimulasikan *priority queue* sederhana.
+
+```python
+agent_type, idx, agent = min(candidates, key=lambda x: x[2].time)
+```
+
+- **Aksi Gerobak** — *Nearest Neighbor*: pergi ke rumah terdekat → ambil sampah → cek transfer ke truk terdekat (jika dalam radius 5 satuan)
+- **Aksi Truk** — *Greedy Batch*: truk menunggu hingga jam 08:00, lalu merencanakan dan mengeksekusi batch hingga 6 rumah
+- **Transfer Gerobak → Truk** — terjadi secara *real-time* saat gerobak mendeteksi truk dalam radius < 5 satuan dan *cost-benefit analysis* menyatakan transfer lebih hemat
 
 ---
 
@@ -288,21 +300,23 @@ Cell dimulai dengan **cek konsistensi koordinat** dan **reset state** seluruh ag
 
 Mencetak laporan terstruktur ke console:
 
-1. Laporan per truk (jarak, waktu perjalanan, waktu loading, jumlah trip, sampah dibuang, sisa)
+1. Laporan per truk: jarak, waktu perjalanan, waktu loading, total waktu operasi, jam selesai, jumlah trip, sampah dibuang, sisa, **bertemu gerobak** (Ya/Tidak), **transfer dari gerobak** (kg)
 2. Total semua truk
-3. Laporan per gerobak (jarak, waktu, trip ke TPS, transfer ke truk, sisa)
+3. Laporan per gerobak: jarak, waktu, trip ke TPS, transfer ke truk, sisa
 4. Total semua gerobak
 5. Status tiap TPS dengan progress bar ASCII (`█░`)
 6. Sisa sampah rumah tangga (jumlah rumah, top 5 terbanyak)
 7. Neraca sampah lengkap + persentase efisiensi
+8. **Ringkasan akhir simulasi**: total iterasi, total event, jam seluruh operasi selesai, progres rumah (terambil/total)
 
 ---
 
 ### Cell 11 — Report Transparansi Pergerakan 
 
-Mencetak log pergerakan dalam dua format:
+Mencetak log pergerakan dalam tiga format:
 1. **Per aktor** — semua event dari satu agen dikelompokkan bersama
-2. **Kronologi gabungan** — semua event dari semua agen diurutkan berdasarkan waktu `HH:MM`
+2. **Kronologi gabungan** — semua event dari semua agen diurutkan berdasarkan waktu `HH:MM`, memperlihatkan gerobak dan truk beroperasi secara bersamaan
+3. **Ringkasan Transfer Gerobak → Truk** — tabel khusus mencantumkan jam kejadian, nama gerobak pengirim, nama truk penerima, dan berat yang ditransfer per kejadian
 
 ---
 
@@ -775,9 +789,22 @@ Ini memastikan simulasi **langsung berhenti** di jam operasi meski sedang di ten
 
 ---
 
-### Event-Driven Simulation
+### Concurrent Event-Driven Simulation
 
-Program menggunakan **event-driven** alih-alih time-step (maju satu menit per iterasi). Setiap iterasi langsung melompat ke event berikutnya dari agen yang paling siap (`time` terkecil). Ini jauh lebih efisien secara komputasi karena sebagian besar interval waktu kosong tidak perlu diproses satu per satu.
+Program menggunakan **concurrent event-driven simulation** — seluruh agen (gerobak + truk) dikelola dalam **satu `while` loop** bersama. Setiap iterasi, agen dengan nilai `time` terkecil di antara semua agen yang masih aktif dipilih untuk menjalankan satu langkah berikutnya.
+
+```
+while not (semua_selesai):
+    agent = min(semua_agen_aktif, key=lambda a: a.time)
+    jalankan_satu_langkah(agent)
+```
+
+**Implikasi desain penting:**
+- Gerobak mulai jam 06:00, truk menunggu hingga jam 08:00. Saat jam 08:00 tercapai di simulasi, truk langsung aktif di loop yang sama.
+- Karena berada di satu *timeline* bersama, posisi truk dan gerobak bisa dibandingkan secara *real-time* → transfer gerobak → truk bisa terjadi kapan saja saat mereka berpapasan.
+- Jauh lebih efisien secara komputasi dibanding *time-step* (maju 1 menit per iterasi) karena langsung melompat ke event berikutnya tanpa memproses interval kosong.
+
+**Catatan:** Jika Cell 9 dijalankan ulang tanpa *Restart Kernel*, pastikan `all_logs = []` telah diinisialisasi ulang di awal Cell 9 agar log dari *run* sebelumnya tidak menumpuk dan menyebabkan data ganda di laporan.
 
 ---
 
