@@ -210,7 +210,7 @@ let houses=[],tpsList=[],gerobaks=[],truks=[],simTime=G_START;
 let running=false,animId=null,lastTs=null,currentSeed=0;
 
 // ── API MODE ──────────────────────────────────────────────────
-let apiMode=false, apiFrames=[], apiFrameIdx=0, apiAnimId=null;
+let apiMode=false, apiFrames=[], apiFrameIdx=0, apiAnimId=null, apiStartTime=null;
 
 async function doApiSimulate(){
   stop();
@@ -285,13 +285,17 @@ function loopApi(ts){
     document.getElementById('statusmsg').textContent='✅ Simulasi Python selesai!';
     return;
   }
-  const spd=+document.getElementById('speed').value;
-  // Maju N frame per render tergantung kecepatan
-  const step=Math.max(1,Math.floor(spd/2));
-  for(let i=0;i<step&&apiFrameIdx<apiFrames.length;i++){
-    applyFrame(apiFrames[apiFrameIdx++]);
+  if(!apiStartTime) apiStartTime=ts;
+  const spd = parseFloat(document.getElementById('speed').value);
+  const totalDuration = (30000 / spd);
+  const progress = (ts - apiStartTime) / totalDuration;
+  const targetIdx = Math.floor(progress * apiFrames.length);
+  
+  if(targetIdx > apiFrameIdx){
+    apiFrameIdx = Math.min(targetIdx, apiFrames.length - 1);
+    applyFrame(apiFrames[apiFrameIdx]);
+    draw(); updateSidebar();
   }
-  draw(); updateSidebar();
   animId=requestAnimationFrame(loopApi);
 }
 
@@ -590,6 +594,7 @@ document.getElementById('btnPlay').addEventListener('click',()=>{
     running=true;lastTs=null;
     document.getElementById('btnPlay').textContent='⏸ Jeda';
     if(apiMode){
+      apiFrameIdx=0; apiStartTime=null;
       document.getElementById('statusmsg').textContent='▶ Memutar hasil simulasi Python…';
       animId=requestAnimationFrame(loopApi);
     } else {
