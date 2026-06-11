@@ -96,6 +96,7 @@
   <header>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="title">Simulasi Pengangkutan Sampah Desa <span>DKA · Heuristik</span></div>
+      <div id="modebadge" style="background:#1a3a1a;border:1px solid #3fb950;color:#3fb950;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600">JS</div>
     </div>
     <div class="controls">
       <div class="speed-wrap">
@@ -105,6 +106,7 @@
       </div>
       <div id="clock">06:00</div>
       <button id="btnReset">↺ Reset</button>
+      <button id="btnApi" style="background:#1f3a5f;border:1px solid #2d6aad;color:#79c0ff">🐍 Python API</button>
       <button class="primary" id="btnPlay">▶ Mulai</button>
     </div>
   </header>
@@ -185,6 +187,7 @@
     <div class="footer-stat">Gerobak: <b id="f-ng">—</b></div>
     <div class="footer-stat">Truk: <b id="f-nt">—</b></div>
     <div class="footer-stat">Seed: <b id="f-seed">—</b></div>
+    <div class="footer-stat">Efisiensi: <b id="f-eff">—</b></div>
     <div id="statusmsg">Tekan Mulai</div>
   </footer>
 </div>
@@ -205,6 +208,92 @@ function seededRng(seed){
 
 let houses=[],tpsList=[],gerobaks=[],truks=[],simTime=G_START;
 let running=false,animId=null,lastTs=null,currentSeed=0;
+
+// ── API MODE ──────────────────────────────────────────────────
+let apiMode=false, apiFrames=[], apiFrameIdx=0, apiAnimId=null;
+
+async function doApiSimulate(){
+  stop();
+  const status=document.getElementById('statusmsg');
+  const badge=document.getElementById('modebadge');
+  status.textContent='⏳ Menghubungi Flask API...';
+  badge.textContent='⏳';
+  badge.style.background='#2a2a1a';badge.style.borderColor='#d29922';badge.style.color='#d29922';
+  try{
+    const res=await fetch('http://localhost:5000/api/simulate',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    loadApiData(data);
+  } catch(e){
+    status.textContent='❌ API gagal: '+e.message+' — Pastikan Cell 18 sudah dijalankan di notebook';
+    badge.textContent='ERR';badge.style.background='#3a1a1a';badge.style.borderColor='#f85149';badge.style.color='#f85149';
+  }
+}
+
+function loadApiData(data){
+  const badge=document.getElementById('modebadge');
+  // Reset state
+  apiMode=true; apiFrames=data.frames; apiFrameIdx=0;
+  simTime=G_START;
+
+  // Build houses dari API data
+  houses=data.houses.map(h=>({id:h.id,x:h.x,y:h.y,trash0:h.trash_initial,trash:h.trash_initial}));
+  tpsList=data.tps_list.map(t=>({id:t.id,x:t.x,y:t.y,cap:t.capacity,stored:0}));
+  gerobaks=data.gerobak_agents.map((g,i)=>({id:g.id,x:g.sx,y:g.sy,load:0,time:G_START,active:true,
+    returning:false,transferFlash:0,trail:[],color:GCOLORS[i%GCOLORS.length]}));
+  truks=data.truk_agents.map((t,i)=>({id:t.id,x:t.sx,y:t.sy,load:0,time:T_START,active:true,
+    returning:false,trail:[],color:TCOLORS[i%TCOLORS.length]}));
+
+  document.getElementById('f-total').textContent=houses.reduce((a,h)=>a+h.trash0,0).toFixed(1)+' kg';
+  document.getElementById('f-ng').textContent=data.num_gerobak+' unit';
+  document.getElementById('f-nt').textContent=data.num_truk+' unit';
+  document.getElementById('f-seed').textContent=data.seed+' (Python)';
+  document.getElementById('f-eff').textContent=data.stats.efisiensi_pct+'%';
+  badge.textContent='🐍 PYTHON';badge.style.background='#1a3050';badge.style.borderColor='#79c0ff';badge.style.color='#79c0ff';
+  document.getElementById('statusmsg').textContent='Data dari Python siap! ('+apiFrames.length+' frame) — Tekan ▶ Mulai';
+  document.getElementById('btnPlay').textContent='▶ Mulai';
+  resize(); applyFrame(apiFrames[0]); draw(); updateSidebar();
+}
+
+function applyFrame(frame){
+  if(!frame) return;
+  simTime=frame.time;
+  // Update posisi agen
+  frame.gerobak.forEach(gd=>{
+    const g=gerobaks.find(x=>x.id===gd.id);
+    if(!g) return;
+    if(g.x!==gd.x||g.y!==gd.y) _pushTrail(g);
+    g.x=gd.x; g.y=gd.y; g.load=gd.load; g.active=gd.active;
+  });
+  frame.truk.forEach(td=>{
+    const t=truks.find(x=>x.id===td.id);
+    if(!t) return;
+    if(t.x!==td.x||t.y!==td.y) _pushTrail(t);
+    t.x=td.x; t.y=td.y; t.load=td.load; t.active=td.active;
+  });
+  frame.houses.forEach(hd=>{ const h=houses.find(x=>x.id===hd.id); if(h) h.trash=hd.trash; });
+  frame.tps.forEach(td=>{ const t=tpsList.find(x=>x.id===td.id); if(t) t.stored=td.stored; });
+}
+
+function loopApi(ts){
+  if(!running) return;
+  if(apiFrameIdx>=apiFrames.length){
+    stop();
+    document.getElementById('statusmsg').textContent='✅ Simulasi Python selesai!';
+    return;
+  }
+  const spd=+document.getElementById('speed').value;
+  // Maju N frame per render tergantung kecepatan
+  const step=Math.max(1,Math.floor(spd/2));
+  for(let i=0;i<step&&apiFrameIdx<apiFrames.length;i++){
+    applyFrame(apiFrames[apiFrameIdx++]);
+  }
+  draw(); updateSidebar();
+  animId=requestAnimationFrame(loopApi);
+}
 
 function randInt(rng,a,b){return a+Math.floor(rng()*(b-a+1));}
 function randF(rng,a,b){return a+(b-a)*rng();}
@@ -484,6 +573,10 @@ function loop(ts){
 
 function doReset(){
   stop();
+  apiMode=false; apiFrames=[]; apiFrameIdx=0;
+  const badge=document.getElementById('modebadge');
+  badge.textContent='JS';badge.style.background='#1a3a1a';badge.style.borderColor='#3fb950';badge.style.color='#3fb950';
+  document.getElementById('f-eff').textContent='—';
   currentSeed=Math.floor(Math.random()*99999)+1;
   buildSim(currentSeed);
   resize();draw();
@@ -496,11 +589,17 @@ document.getElementById('btnPlay').addEventListener('click',()=>{
   else{
     running=true;lastTs=null;
     document.getElementById('btnPlay').textContent='⏸ Jeda';
-    document.getElementById('statusmsg').textContent='Simulasi berjalan…';
-    animId=requestAnimationFrame(loop);
+    if(apiMode){
+      document.getElementById('statusmsg').textContent='▶ Memutar hasil simulasi Python…';
+      animId=requestAnimationFrame(loopApi);
+    } else {
+      document.getElementById('statusmsg').textContent='Simulasi JS berjalan…';
+      animId=requestAnimationFrame(loop);
+    }
   }
 });
 document.getElementById('btnReset').addEventListener('click',doReset);
+document.getElementById('btnApi').addEventListener('click',doApiSimulate);
 document.getElementById('speed').addEventListener('input',function(){document.getElementById('speedval').textContent=this.value+'×';});
 resize();doReset();
 </script>

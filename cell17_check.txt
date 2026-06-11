@@ -1,0 +1,9 @@
+# ============================================================
+# SIMULASI UTAMA — Concurrent Event-Driven
+# ============================================================
+# Gerobak dan truk berjalan dalam SATU loop bersama.
+# Setiap iterasi, agen dengan waktu (time) terkecil dipilih untuk
+# melakukan satu langkah aksi berikutnya — mirip priority queue.
+# Efeknya: truk mulai jam 08:00 bisa benar-benar "berpapasan"
+# dengan gerobak yang sudah jalan sejak 06:00.
+# ====================================
