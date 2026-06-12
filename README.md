@@ -377,6 +377,7 @@ Untuk menghindari perjalanan pulang gerobak yang terlalu jauh ke TPS, gerobak da
 2. **Selisih waktu maksimal 30 menit** (`abs(t.time - g.time) <= 30`).
 3. **Kapasitas sisa truk mencukupi** (minimal 5 kg).
 4. **Gerobak membawa cukup sampah** (minimal 3 kg jika papasan di jalan).
+5. **Cost-Benefit Jarak:** Jarak ke truk harus lebih dekat (atau minimal sama) dibandingkan jarak gerobak ke TPS terdekat, agar tidak terlalu rugi :v.
 
 **Mekanisme Simulasinya:**
 - **Menghampiri:** Gerobak akan disimulasikan **berjalan** menuju koordinat truk tersebut berada (`g.move_to(t.x, t.y)`), sehingga waktu perjalanannya bertambah secara realistis.
