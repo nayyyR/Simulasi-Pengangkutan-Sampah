@@ -366,37 +366,21 @@ def greedy_batch_plan(truk, houses, max_houses=6):
 
 ---
 
-### 5.3 Cost-Benefit Analysis — Keputusan Transfer Gerobak → Truk
+### 5.3 Rendezvous Transfer Rule (Kelonggaran Titip Truk)
 
-**Digunakan oleh:** Gerobak (saat berpapasan atau mendekati truk)  
-**Kategori:** Cost-Benefit Heuristic / Decision Rule
+**Digunakan oleh:** Gerobak (saat berpapasan dengan truk atau saat gerobak hampir penuh)  
+**Kategori:** Rendezvous / Synchronization Rule
 
 **Deskripsi:**  
-Saat gerobak mendeteksi truk berada dalam jarak dekat (< 5 satuan) dengan muatan ≥ 3 kg, program mengevaluasi apakah lebih hemat waktu mentransfer ke truk atau langsung ke TPS.
+Untuk menghindari perjalanan pulang gerobak yang terlalu jauh ke TPS, gerobak dapat "mencegat" truk sampah untuk menitipkan muatannya asalkan memenuhi syarat toleransi jarak dan waktu:
+1. **Jarak maksimal 15 satuan** (`euclidean(g.pos, t.pos) <= 15.0`).
+2. **Selisih waktu maksimal 30 menit** (`abs(t.time - g.time) <= 30`).
+3. **Kapasitas sisa truk mencukupi** (minimal 5 kg).
+4. **Gerobak membawa cukup sampah** (minimal 3 kg jika papasan di jalan).
 
-Dua skenario yang dibandingkan:
-
-```
-Skenario A (transfer ke truk):
-  Waktu_A = travel(gerobak → truk) + loading(muatan_gerobak)
-
-Skenario B (gerobak langsung ke TPS terdekat):
-  Waktu_B = travel(gerobak → TPS) + loading(muatan_gerobak)
-```
-
-Karena `loading(muatan_gerobak)` sama di kedua skenario, keputusannya cukup membandingkan jarak:
-
-```python
-if dist_g_to_t < dist_g_to_tps * 0.75 and gerobak.load >= 3.0:
-    return ('transfer', time_B - time_A)
-return ('skip', 0)
-```
-
-**Threshold 0.75:** Transfer dipilih hanya jika truk setidaknya **25% lebih dekat** dari TPS. Hal ini mencegah transfer yang hanya menghemat jarak marginal.
-
-**Guard conditions:**
-- `truk.load + gerobak.load > CAP_TRUK * 0.98` → skip (truk hampir penuh, tidak bisa menerima)
-- `gerobak.load < 1.0` → skip (muatan terlalu kecil, tidak worth it)
+**Mekanisme Simulasinya:**
+- **Menghampiri:** Gerobak akan disimulasikan **berjalan** menuju koordinat truk tersebut berada (`g.move_to(t.x, t.y)`), sehingga waktu perjalanannya bertambah secara realistis.
+- **Menunggu (Sinkronisasi):** Jika truk tiba di lokasi pertemuan lebih dulu dari gerobak, maka waktu internal truk disinkronkan ke waktu kedatangan gerobak (truk disimulasikan "berhenti menunggu").
 
 ---
 
@@ -426,7 +410,7 @@ Jika semua TPS penuh, fungsi mengembalikan `None` dan agen dicatat sebagai error
 |---|---|---|---|---|
 | 5.1 | Nearest Neighbor | Gerobak | Konstruktif Greedy | Pilih rumah terdekat berikutnya |
 | 5.2 | Greedy Capacity Fill | Truk | Greedy Batch | Rencanakan batch rumah per trip |
-| 5.3 | Cost-Benefit Analysis | Gerobak (berpapasan truk) | Decision Rule | Transfer ke truk atau ke TPS? |
+| 5.3 | Rendezvous Transfer Rule | Gerobak | Synchronization | Transfer ke truk dengan toleransi jarak & waktu | Decision Rule | Transfer ke truk atau ke TPS? |
 | 5.4 | Greedy Nearest Feasible | Gerobak & Truk | Greedy | Pilih TPS terdekat yang masih ada kapasitas |
 
 ---
